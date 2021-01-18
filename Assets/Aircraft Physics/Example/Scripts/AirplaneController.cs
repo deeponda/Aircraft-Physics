@@ -1,108 +1,86 @@
-﻿using System.Collections.Generic;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEditorInternal;
 using UnityEngine;
-using UnityEngine.UI;
+using UnityEngine.SceneManagement;
 
 public class AirplaneController : MonoBehaviour
 {
-    [SerializeField]
-    List<AeroSurface> controlSurfaces = null;
-    [SerializeField]
-    List<WheelCollider> wheels = null;
     [SerializeField]
     float rollControlSensitivity = 0.2f;
     [SerializeField]
     float pitchControlSensitivity = 0.2f;
     [SerializeField]
     float yawControlSensitivity = 0.2f;
-
-    [Range(-1, 1)]
-    public float Pitch;
-    [Range(-1, 1)]
-    public float Yaw;
-    [Range(-1, 1)]
-    public float Roll;
-    [Range(0, 1)]
-    public float Flap;
     [SerializeField]
-    Text displayText = null;
+    float thrustControlSensitivity = 0.01f;
+    [SerializeField]
+    float flapControlSensitivity = 0.15f;
+
+
+    float pitch;
+    float yaw;
+    float roll;
+    float flap;
 
     float thrustPercent;
-    float brakesTorque;
+    bool brake = false;
 
     AircraftPhysics aircraftPhysics;
-    Rigidbody rb;
+    Rotator propeller;
 
     private void Start()
     {
         aircraftPhysics = GetComponent<AircraftPhysics>();
-        rb = GetComponent<Rigidbody>();
+        propeller = FindObjectOfType<Rotator>();
+        SetThrust(0);
     }
 
     private void Update()
     {
-        Pitch = Input.GetAxis("Vertical");
-        Roll = Input.GetAxis("Horizontal");
-        Yaw = Input.GetAxis("Yaw");
-
-        if (Input.GetKeyDown(KeyCode.Space))
+        if (Input.GetKeyDown(KeyCode.R))
         {
-            thrustPercent = thrustPercent > 0 ? 0 : 1f;
+            SceneManager.LoadScene(0);
         }
 
-        if (Input.GetKeyDown(KeyCode.F))
+        if (Input.GetKey(KeyCode.Space))
         {
-            Flap = Flap > 0 ? 0 : 0.3f;
+            SetThrust(thrustPercent + thrustControlSensitivity);
+        }
+        propeller.speed = thrustPercent * 1500f;
+
+        if (Input.GetKeyDown(KeyCode.LeftShift))
+        {
+            thrustControlSensitivity *= -1;
+            flapControlSensitivity *= -1;
         }
 
         if (Input.GetKeyDown(KeyCode.B))
         {
-            brakesTorque = brakesTorque > 0 ? 0 : 100f;
+            brake = !brake;
         }
 
-        displayText.text = "V: " + ((int)rb.velocity.magnitude).ToString("D3") + " m/s\n";
-        displayText.text += "A: " + ((int)transform.position.y).ToString("D4") + " m\n";
-        displayText.text += "T: " + (int)(thrustPercent * 100) + "%\n";
-        displayText.text += brakesTorque > 0 ? "B: ON" : "B: OFF";
+        if (Input.GetKeyDown(KeyCode.LeftControl))
+        {
+            flap += flapControlSensitivity;
+            //clamp
+            flap = Mathf.Clamp(flap, 0f, Mathf.Deg2Rad * 40);
+        }
+
+        pitch = pitchControlSensitivity * Input.GetAxis("Vertical");
+        roll = rollControlSensitivity * Input.GetAxis("Horizontal");
+        yaw = yawControlSensitivity * Input.GetAxis("Yaw");
+    }
+
+    private void SetThrust(float percent)
+    {
+        thrustPercent = Mathf.Clamp01(percent);
     }
 
     private void FixedUpdate()
     {
-        SetControlSurfecesAngles(Pitch, Roll, Yaw, Flap);
+        aircraftPhysics.SetControlSurfecesAngles(pitch, roll, yaw, flap);
         aircraftPhysics.SetThrustPercent(thrustPercent);
-        foreach (var wheel in wheels)
-        {
-            wheel.brakeTorque = brakesTorque;
-            // small torque to wake up wheel collider
-            wheel.motorTorque = 0.01f;
-        }
-    }
-
-    public void SetControlSurfecesAngles(float pitch, float roll, float yaw, float flap)
-    {
-        foreach (var surface in controlSurfaces)
-        {
-            if (surface == null || !surface.IsControlSurface) continue;
-            switch (surface.InputType)
-            {
-                case ControlInputType.Pitch:
-                    surface.SetFlapAngle(pitch * pitchControlSensitivity * surface.InputMultiplyer);
-                    break;
-                case ControlInputType.Roll:
-                    surface.SetFlapAngle(roll * rollControlSensitivity * surface.InputMultiplyer);
-                    break;
-                case ControlInputType.Yaw:
-                    surface.SetFlapAngle(yaw * yawControlSensitivity * surface.InputMultiplyer);
-                    break;
-                case ControlInputType.Flap:
-                    surface.SetFlapAngle(Flap * surface.InputMultiplyer);
-                    break;
-            }
-        }
-    }
-
-    private void OnDrawGizmos()
-    {
-        if (!Application.isPlaying)
-            SetControlSurfecesAngles(Pitch, Roll, Yaw, Flap);
+        aircraftPhysics.Brake(brake);
     }
 }
