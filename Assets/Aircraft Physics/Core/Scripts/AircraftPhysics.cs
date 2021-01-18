@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
@@ -11,6 +11,8 @@ public class AircraftPhysics : MonoBehaviour
     float thrust = 0;
     [SerializeField] 
     List<AeroSurface> aerodynamicSurfaces = null;
+    [SerializeField]
+    List<ControlSurface> controlSurfaces = null;
 
     Rigidbody rb;
     float thrustPercent;
@@ -19,6 +21,29 @@ public class AircraftPhysics : MonoBehaviour
     public void SetThrustPercent(float percent)
     {
         thrustPercent = percent;
+    }
+
+    public void SetControlSurfecesAngles(float pitch, float roll, float yaw, float flap)
+    {
+        foreach (var controlSurface in controlSurfaces)
+        {
+            if (controlSurface.surface == null) return;
+            switch (controlSurface.type)
+            {
+                case ControlSurfaceType.Pitch:
+                    controlSurface.surface.SetFlapAngle(pitch * controlSurface.flapAngle);
+                    break;
+                case ControlSurfaceType.Roll:
+                    controlSurface.surface.SetFlapAngle(roll * controlSurface.flapAngle);
+                    break;
+                case ControlSurfaceType.Yaw:
+                    controlSurface.surface.SetFlapAngle(yaw * controlSurface.flapAngle);
+                    break;
+                case ControlSurfaceType.Flap:
+                    controlSurface.surface.SetFlapAngle(flap * controlSurface.flapAngle);
+                    break;
+            }
+        }
     }
 
     private void Awake()
@@ -31,8 +56,7 @@ public class AircraftPhysics : MonoBehaviour
         BiVector3 forceAndTorqueThisFrame = 
             CalculateAerodynamicForces(rb.velocity, rb.angularVelocity, Vector3.zero, 1.2f, rb.worldCenterOfMass);
 
-        Vector3 velocityPrediction = PredictVelocity(forceAndTorqueThisFrame.p
-            + transform.forward * thrust * thrustPercent + Physics.gravity * rb.mass);
+        Vector3 velocityPrediction = PredictVelocity(forceAndTorqueThisFrame.p);
         Vector3 angularVelocityPrediction = PredictAngularVelocity(forceAndTorqueThisFrame.q);
 
         BiVector3 forceAndTorquePrediction = 
@@ -61,7 +85,7 @@ public class AircraftPhysics : MonoBehaviour
 
     private Vector3 PredictVelocity(Vector3 force)
     {
-        return rb.velocity + Time.fixedDeltaTime * PREDICTION_TIMESTEP_FRACTION * force / rb.mass;
+        return rb.velocity + Time.fixedDeltaTime * PREDICTION_TIMESTEP_FRACTION * (force / rb.mass + Physics.gravity);
     }
 
     private Vector3 PredictAngularVelocity(Vector3 torque)
@@ -77,9 +101,30 @@ public class AircraftPhysics : MonoBehaviour
             * (inertiaTensorWorldRotation * angularVelocityChangeInDiagonalSpace);
     }
 
+    public void Brake(bool isBraking) //increases drag on wheels
+    {
+        //add drag on wheels
+        SphereCollider[] wheels = FindObjectsOfType<SphereCollider>();
+
+        //change based on isBraking
+        float friction;
+        if (isBraking)
+        {
+            friction = 0.2f;
+        }
+        else
+        {
+            friction = 0f;
+        }
+
+        foreach (SphereCollider wheel in wheels)
+        {
+            wheel.material.dynamicFriction = friction;
+        }
+    }
+
 #if UNITY_EDITOR
-    // For gizmos drawing.
-    public void CalculateCenterOfLift(out Vector3 center, out Vector3 force, Vector3 displayAirVelocity, float displayAirDensity)
+    public void CalculateCenterOfLift(out Vector3 center, out Vector3 force, Vector3 displayAirVelocity, float displayAirDensity, float pitch, float yaw, float roll, float flap)
     {
         Vector3 com;
         BiVector3 forceAndTorque;
@@ -93,6 +138,12 @@ public class AircraftPhysics : MonoBehaviour
         if (rb == null)
         {
             com = GetComponent<Rigidbody>().worldCenterOfMass;
+            foreach (var surface in aerodynamicSurfaces)
+            {
+                if (surface.Config != null)
+                    surface.Initialize();
+            }
+            SetControlSurfecesAngles(pitch, roll, yaw, flap);
             forceAndTorque = CalculateAerodynamicForces(-displayAirVelocity, Vector3.zero, Vector3.zero, displayAirDensity, com);
         }
         else
@@ -107,4 +158,12 @@ public class AircraftPhysics : MonoBehaviour
 #endif
 }
 
+[System.Serializable]
+public class ControlSurface
+{
+    public AeroSurface surface;
+    public float flapAngle;
+    public ControlSurfaceType type;
+}
 
+public enum ControlSurfaceType { Pitch, Yaw, Roll, Flap }
